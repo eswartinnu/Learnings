@@ -1,0 +1,159 @@
+Path Patterns:
+
+This is used to pick a variable in a path and pass it to the required route
+
+@Bean
+	public RouteLocator yourRoutes(RouteLocatorBuilder builder) {
+		return builder.routes()
+				.route(r -> r
+						.path("/bro/**")
+						.filters(f -> f.rewritePath("/bro/(?<segment>.*)/hi", "/cool/${segment}"))
+						.uri("http://localhost:8080"))
+				.build();
+	}
+	
+
+
+
+From an Embedded Database
+
+@Repository
+public class routeRepo {
+	
+	@Autowired
+	JdbcTemplate template;
+	
+	public routedata getRoutedata(int id) {
+		String query= "SELECT * FROM routedata WHERE id=?";
+		routedata rd= template.queryForObject(query, new Object[] {id},new BeanPropertyRowMapper<>(routedata.class));
+		return rd;
+	}
+	
+}
+
+Route Data for handling the data from database 
+
+public class routedata {
+	
+	private int id;
+	private String path;
+	private String uri;
+}	
+
+@Bean
+	public RouteLocator myRoutes(RouteLocatorBuilder builder) {
+		RouteLocatorBuilder.Builder routelocator=builder.routes();
+		for(int i=1;i<=4;i++){
+			routedata rd=routerepo.getRoutedata(i);
+			routelocator.route(r -> r
+					.path(rd.getPath())
+					.uri(rd.getUri()));
+		}
+		
+		return routelocator.build();
+	}
+	
+
+You store the data in the data.sql and schema in schema.sql file
+
+
+In the yaml file:
+
+spring.cloud.gateway.routes[0].uri:'http://localhost:8080/datax'
+spring.cloud.gateway.routes[0].predicates[0]:'Path= /get'
+
+For adding the filters in the yaml we need to use predicates[1] property
+
+
+
+Integrating the paths through config server
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.config.server.EnableConfigServer;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@EnableConfigServer
+@SpringBootApplication
+public class Application {
+	
+	public static void main(String[] args) {
+	
+			SpringApplication.run(Application.class, args);
+			
+	}
+	
+	@RequestMapping
+	public String home() {
+		return "This is Home for H2 Config Server";
+	}
+	
+}
+
+The bellow code is used to store the create an url for a local database, if we laready have a database connection we can use that as well
+
+import org.h2.jdbcx.JdbcDataSource;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import javax.naming.Context;
+import javax.naming.InitialContext;
+import javax.naming.NamingException;
+import javax.sql.DataSource;
+
+@Configuration
+public class ApplicationConfig {
+	 private static final String TEMP_DIRECTORY = System.getProperty("java.io.tmpdir");
+	 @Bean(name = "mainDataSource")
+	 public DataSource createMainDataSource() {
+	 JdbcDataSource ds = new JdbcDataSource();
+	 ds.setURL("jdbc:h2:"+TEMP_DIRECTORY+"/testdb;MODE=MySQL");
+	 return ds;
+ }
+}
+
+Application.yml file
+
+
+spring:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  profiles:
+    active:
+    - jdbc
+  cloud:
+    config:
+      server:
+        default-label: jdbc
+        bootstrap: true
+        jdbc:
+          sql: SELECT KEY, VALUE FROM PROPERTIES where APPLICATION=? and PROFILE=? and LABEL=?
+          order: 1
+
+
+bootstrap.yml file
+
+spring:
+  application:
+    name: H2-Config-Server
+    
+server:
+  port: 7001
+  
+Schema file:
+
+DROP TABLE PROPERTIES IF EXISTS;
+
+CREATE TABLE PROPERTIES (
+    id            NUMBER,
+    application   VARCHAR(500),
+    profile       VARCHAR(500),
+    label         VARCHAR(500),
+    key           VARCHAR(500),
+    value         VARCHAR(500),
+    PRIMARY KEY ( id )
+);
